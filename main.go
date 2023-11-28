@@ -7,46 +7,105 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	// "github.com/joho/godotenv"
+	"github.com/lowry/inventory-app/middleware"
 	"github.com/lowry/inventory-app/storage"
 
 	"xorm.io/xorm"
 )
+type StoreUsers struct{
+	Name 		string	`json:"name"`
+	Phone 		string	`json:"phone"`
+	Email 		string	`json:"email"`
+	// Inventory 	[]Inventory `json:"inventory"`
+}
 
 type Inventory struct{
 	Name 		string	`json:"name"`
 	Price 		float32	`json:"price"`
 	Instock 	bool	`json:"instock"`
 	Quantity 	int	`json:"quantity"`
+	UserID		uint `json:"user_id"`
 }
 
 type Repository struct{
 	DBConn *xorm.Engine
 }
 
-func (r *Repository) CreateProduct(c *fiber.Ctx) error {
-	fmt.Println("Creating products...")
-	item := Inventory{}
-	err :=c.BodyParser(&item)
+func (r *Repository) CreateUser(c *fiber.Ctx) error {
+	var newUser StoreUsers
+	err := c.BodyParser(&newUser)
 	if err != nil{
-		c.Status(http.StatusUnprocessableEntity).JSON(
-			&fiber.Map{"message":"request failed"})
+		c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"request failed"})
 		return err
 	}
-	_, err = r.DBConn.Insert(&item)
+
+	// user_id := c.Params("userID")
+	users := &[]StoreUsers{}
+	err = r.DBConn.Find(users)
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+	for _, user := range *users{
+		if newUser.Email == user.Email{
+			c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"email already used"})
+			return err
+		}
+		if newUser.Phone == user.Phone{
+			c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"email already used"})
+			return err
+		}
+	}
+	_, err = r.DBConn.Insert(&newUser)
+	if err != nil{
+		c.Status(400).JSON(&fiber.Map{"message":"request failed"})
+		return err
+	}
+	log.Printf("user created: %s\n", newUser.Name)
+	c.Status(http.StatusOK).JSON(&fiber.Map{
+		"message":"user has been created",
+		 "data":newUser,
+		})
+	return nil
+}
+
+
+func (r *Repository) GetUsers(c *fiber.Ctx) error {
+	// user_id := c.Params("userID")
+	user := &[]StoreUsers{}
+    err := r.DBConn.Find(user)
+    if err != nil {
+        fmt.Println(err)
+        return err
+    }
+	c.JSON(&fiber.Map{"data":user})
+	return nil
+}
+
+
+func (r *Repository) CreateOwnerProduct(c *fiber.Ctx) error {
+	fmt.Println("Creating products...")
+	userID := c.Params("userID")
+	var newUser Inventory
+	if err := c.BodyParser(&newUser); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(&fiber.Map{"error": "Invalid request payload"})
+	}
+	// Set the UserID for the product
+	newUser.UserID = middleware.ParseUserID(userID)
+	_, err := r.DBConn.Insert(&newUser)
 	if err != nil {
 		c.Status(http.StatusBadRequest).JSON(
 			&fiber.Map{"message":"Could not create product"})
 			log.Printf("Error creating product: %v\n", err)
 		return err
 	}
-	log.Printf("product created: %s\n", item.Name)
+	log.Printf("product created: %s\n", newUser.Name)
 	c.Status(http.StatusOK).JSON(&fiber.Map{
 		"message":"product has been added",
-		 "data":item,
+		 "data":newUser,
 		})
 	return nil
 }
-
 
 
 func (r *Repository) GetProducts(c *fiber.Ctx) error {
@@ -132,11 +191,10 @@ func (r *Repository) UpdateProduct(c *fiber.Ctx) error {
 
 
 func (r *Repository) SetupRoutes(app *fiber.App) {
-
 	api := app.Group("api")
-	api.Post("/products", r.CreateProduct)
+	api.Post("/products", r.CreateOwnerProduct)
 	api.Get("/products", r.GetProducts)
-	
+
 	api.Get("/product/:id", r.GetProduct)
 	api.Put("/product/update/:id", r.UpdateProduct)
 	// middleware to handle other functionalities on views beneath
@@ -146,15 +204,21 @@ func (r *Repository) SetupRoutes(app *fiber.App) {
 		fmt.Println("some giberisssssssssh")
 		return c.Next()
 	})
-	app.Static("static", "./public")
+	app.Static("/static", "./public")
+
 	api.Delete("/product/delete/:id", r.DeleteProduct)
+
+	// create user
+	api.Post("/product/user", r.CreateUser)
+
+	// Route to get all users
+	api.Get("/users", r.GetUsers)
+
+	// Route to create a product for a specific user
+	api.Post("/users/:userID/products", r.CreateOwnerProduct)
 }
 
 func main(){
-	// err := godotenv.Load(".env")
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
 	app :=fiber.New(
 		fiber.Config{
 		    ServerHeader:  "Fiber",
@@ -166,16 +230,6 @@ func main(){
 		log.Fatal("db connection failed", err)
 	}
 
-
-
-	// config := &database.Config{
-	// 	Host: os.Getenv("DB_HOST"),
-	// 	Port: os.Getenv("DB_PORT"),
-	// 	User: os.Getenv("DB_USER"),
-	// 	DBName: os.Getenv("DB_NAME"),
-	// 	Password: os.Getenv("DB_PASS"),
-	// 	SSLMode: os.Getenv("DB_SSLMODE"),
-	// }
 	r := Repository{
 		DBConn: engine,
 	}

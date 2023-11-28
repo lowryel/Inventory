@@ -5,17 +5,7 @@ import (
 	_ "github.com/lib/pq"
 	// "gorm.io/driver/postgres"
 	"fmt"
-	// "gorm.io/gorm"
 )
-
-// type Config struct{
-// 	Host 		string
-// 	Port 		string
-// 	User 		string
-// 	DBName 		string
-// 	Password 	string
-// 	SSLMode 	string
-// }
 
 type Inventory struct{
 	ID 			int64	`json:"id"`
@@ -23,6 +13,15 @@ type Inventory struct{
 	Price 		*float32	`json:"price"`
 	Instock 	*bool	`json:"instock"`
 	Quantity 	*int	`json:"quantity"`
+	UserID		*StoreUsers	`json:"user_id"`
+}
+
+type StoreUsers struct{
+	ID 			int64	`json:"id"`
+	Name 		*string	`json:"name"`
+	Phone 		*string	`json:"phone"`
+	Email 		*string	`json:"email"`
+	// Inventory	*[]Inventory `json:"inventory"`
 }
 
 func NewConnection() (*xorm.Engine, error){
@@ -37,7 +36,7 @@ func NewConnection() (*xorm.Engine, error){
 	if err := engine.Ping(); err != nil{
 		return nil, err
 	}
-	if err := engine.Sync(new(Inventory)); err != nil{
+	if err := engine.Sync(new(Inventory), new(StoreUsers)); err != nil{
 		return nil, err
 	}
 	return engine, err
