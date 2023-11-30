@@ -46,24 +46,26 @@ func (r *Repository) CreateUser(c *fiber.Ctx) error {
 		fmt.Println(err)
 		return err
 	}
-	for _, user := range *users{
-		if newUser.Email == user.Email{
+	// run some input validation checks
+	for _, users := range *users{
+		if newUser.Email == users.Email{
 			c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"email already used"})
 			return err
 		}
-		if newUser.Phone == user.Phone{
+		if newUser.Phone == users.Phone{
 			c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"email already used"})
 			return err
 		}
 	}
+	// insert users into DB
 	_, err = r.DBConn.Insert(&newUser)
 	if err != nil{
 		c.Status(400).JSON(&fiber.Map{"message":"request failed"})
 		return err
 	}
-	log.Printf("user created: %s\n", newUser.Name)
+	log.Printf("users created: %s\n", newUser.Name)
 	c.Status(http.StatusOK).JSON(&fiber.Map{
-		"message":"user has been created",
+		"message":"users object created",
 		 "data":newUser,
 		})
 	return nil
@@ -71,14 +73,13 @@ func (r *Repository) CreateUser(c *fiber.Ctx) error {
 
 
 func (r *Repository) GetUsers(c *fiber.Ctx) error {
-	// user_id := c.Params("userID")
-	user := &[]StoreUsers{}
-    err := r.DBConn.Find(user)
+	users := &[]StoreUsers{}
+    err := r.DBConn.Find(users)
     if err != nil {
         fmt.Println(err)
         return err
     }
-	c.JSON(&fiber.Map{"data":user})
+	c.JSON(&fiber.Map{"data":users})
 	return nil
 }
 
@@ -136,7 +137,7 @@ func (r *Repository) GetProduct(c *fiber.Ctx) error{
 		c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"item not available"})
 		return err
 	}
-	c.Status(http.StatusOK).JSON(&fiber.Map{"message":"Success", "data":item})
+	c.Status(http.StatusOK).JSON(&fiber.Map{"data":item})
 	return nil
 }
 
@@ -208,13 +209,13 @@ func (r *Repository) SetupRoutes(app *fiber.App) {
 
 	api.Delete("/product/delete/:id", r.DeleteProduct)
 
-	// create user
-	api.Post("/product/user", r.CreateUser)
+	// create users
+	api.Post("/product/users", r.CreateUser)
 
 	// Route to get all users
 	api.Get("/users", r.GetUsers)
 
-	// Route to create a product for a specific user
+	// Route to create a product for a specific users
 	api.Post("/users/:userID/products", r.CreateOwnerProduct)
 }
 
