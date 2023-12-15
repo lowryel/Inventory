@@ -1,9 +1,9 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	// "github.com/joho/godotenv"
@@ -13,18 +13,36 @@ import (
 	"xorm.io/xorm"
 )
 type StoreUsers struct{
-	Name 		string	`json:"name"`
-	Phone 		string	`json:"phone"`
-	Email 		string	`json:"email"`
-	// Inventory 	[]Inventory `json:"inventory"`
+	First_name		string		`json:"first_name" validate:"required"`
+	Username 		string		`json:"username" validate:"required, min=3, max=50"`
+	Phone 			string		`json:"phone" validate:"required, min=10, max=15"`
+	Email 			string		`json:"email" validate:"required, email"`
+	Password		string		`json:"password" validate:"required, min=8"`
+	User_type		string		`json:"user_type" validate:"required, eq=ADMIN|eq=USER"`
+	Token			string		`json:"token"`
+	Created			time.Time	`json:"created"`
+	Refresh_token	string		`json:"refresh_token"`
+}
+
+// USer type
+type LoginObject struct {
+	Username string	`json:"username"`
+	Password string	`json:"password"`
+}
+
+type LoginData struct{
+	Username 		string		`json:"username" validate:"required, min=3, max=50"`
+	Phone 			string		`json:"phone" validate:"required, min=10, max=15"`
+	Email 			string		`json:"email" validate:"required, email"`
+	Password		string		`json:"password" validate:"required, min=8"`
 }
 
 type Inventory struct{
-	Name 		string	`json:"name"`
-	Price 		float32	`json:"price"`
-	Instock 	bool	`json:"instock"`
-	Quantity 	int	`json:"quantity"`
-	UserID		uint `json:"user_id"`
+	Name 		string	`json:"name" validate:"required"`
+	Price 		float32	`json:"price" validate:"required"`
+	Instock 	bool	`json:"instock" validate:"required"`
+	Quantity 	int		`json:"quantity" validate:"required"`
+	UserID		uint 	`json:"user_id"`
 }
 
 type Repository struct{
@@ -39,11 +57,10 @@ func (r *Repository) CreateUser(c *fiber.Ctx) error {
 		return err
 	}
 
-	// user_id := c.Params("userID")
 	users := &[]StoreUsers{}
 	err = r.DBConn.Find(users)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		return err
 	}
 	// run some input validation checks
@@ -53,64 +70,94 @@ func (r *Repository) CreateUser(c *fiber.Ctx) error {
 			return err
 		}
 		if newUser.Phone == users.Phone{
-			c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"email already used"})
+			c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"phone number already used"})
+			return err
+		}
+		if newUser.Username == users.Username{
+			c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"username already taken"})
 			return err
 		}
 	}
-	// insert users into DB
+	hash_pass, err := middleware.Hash(newUser.Password)
+	if err != nil{
+		log.Fatal("couldn't hash password")
+		return err
+	}
+	// insert users into DB users table
+	newUser.Created = time.Now().Local()
+	newUser.Password = hash_pass
 	_, err = r.DBConn.Insert(&newUser)
 	if err != nil{
 		c.Status(400).JSON(&fiber.Map{"message":"request failed"})
 		return err
 	}
-	log.Printf("users created: %s\n", newUser.Name)
+	login_data := LoginData{}
+	login_data.Username=newUser.Username
+	login_data.Email = newUser.Email
+	login_data.Phone = newUser.Phone
+	login_data.Password = newUser.Password
+
+	// insert users into login table
+	_, err = r.DBConn.Insert(&login_data)
+	if err != nil {
+		log.Fatal("unable to add user to login table")
+		return nil
+	}
+
+	log.Printf("users created: %s\n", newUser.Username)
 	c.Status(http.StatusOK).JSON(&fiber.Map{
-		"message":"users object created",
+		"message":"user created",
 		 "data":newUser,
 		})
 	return nil
 }
 
 
-func (r *Repository) GetUsers(c *fiber.Ctx) error {
-	users := &[]StoreUsers{}
-    err := r.DBConn.Find(users)
+func (r *Repository) GetUser(c *fiber.Ctx) error {
+	user := &database.StoreUsers{}
+	id := c.Params("user_id")
+    has, err := r.DBConn.SQL("select * from store_users where i_d= ? limit 1", id).Get(user)
+	if !has{
+		c.Status(http.StatusNotFound).JSON(&fiber.Map{"message":"data not found"})
+		log.Println("invalid id")
+		return nil
+	}
     if err != nil {
-        fmt.Println(err)
+        log.Println(err)
         return err
     }
-	c.JSON(&fiber.Map{"data":users})
+	c.JSON(&fiber.Map{"user_data":user})
 	return nil
 }
 
 
 func (r *Repository) CreateOwnerProduct(c *fiber.Ctx) error {
-	fmt.Println("Creating products...")
+	log.Println("Creating products...")
 	userID := c.Params("userID")
-	var newUser Inventory
-	if err := c.BodyParser(&newUser); err != nil {
+	var newProduct Inventory
+	if err := c.BodyParser(&newProduct); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(&fiber.Map{"error": "Invalid request payload"})
 	}
 	// Set the UserID for the product
-	newUser.UserID = middleware.ParseUserID(userID)
-	_, err := r.DBConn.Insert(&newUser)
+	newProduct.UserID = middleware.ParseUserID(userID)
+	_, err := r.DBConn.Insert(&newProduct)
 	if err != nil {
 		c.Status(http.StatusBadRequest).JSON(
 			&fiber.Map{"message":"Could not create product"})
 			log.Printf("Error creating product: %v\n", err)
 		return err
 	}
-	log.Printf("product created: %s\n", newUser.Name)
+	log.Printf("product created: %s\n", newProduct.Name)
 	c.Status(http.StatusOK).JSON(&fiber.Map{
 		"message":"product has been added",
-		 "data":newUser,
+		 "data":newProduct,
 		})
 	return nil
 }
 
 
 func (r *Repository) GetProducts(c *fiber.Ctx) error {
-	fmt.Println("Getting all products...")
+	log.Println("Getting all products...")
 	items := &[]database.Inventory{}
 	err := r.DBConn.Find(items)
 	if err != nil{
@@ -123,8 +170,6 @@ func (r *Repository) GetProducts(c *fiber.Ctx) error {
 
 func (r *Repository) GetProduct(c *fiber.Ctx) error{
 	id := c.Params("id")
-	fmt.Println(id)
-	fmt.Println("John Robert Oppenheimer")
 	var item database.Inventory
 	// var name string
 	has, err := r.DBConn.SQL("select * from inventory where i_d= ? limit 1", id).Get(&item)
@@ -132,22 +177,21 @@ func (r *Repository) GetProduct(c *fiber.Ctx) error{
 		c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"item not in stock"})
 		log.Fatal(err)
 	}
-	fmt.Println(has)
 	if !has {
 		c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"item not available"})
 		return err
 	}
-	c.Status(http.StatusOK).JSON(&fiber.Map{"data":item})
+	c.Status(http.StatusOK).JSON(&fiber.Map{"product_data":item})
 	return nil
 }
 
 
 func (r *Repository) DeleteProduct(c *fiber.Ctx) error{
 	id := c.Params("id")
-	fmt.Println(id)
+	log.Println(id)
 	var item database.Inventory
 	// var name string
-	has, err := r.DBConn.ID(id).Delete(&item) // has returned a number either 0 or 1
+	has, err := r.DBConn.ID(id).Delete(&item) // "has" returned a number either 0 or 1
 	if err !=nil{
 		c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"item not in stock"})
 		return err
@@ -160,10 +204,50 @@ func (r *Repository) DeleteProduct(c *fiber.Ctx) error{
 	return nil
 }
 
+func (r *Repository) LoginHandler(c *fiber.Ctx) error {
+	loginObj := &LoginObject{}
+	err := c.BodyParser(loginObj)
+	if err != nil{
+		log.Fatal("invalid data")
+		return nil
+	}
+	hash, err := middleware.Hash(loginObj.Password) // hash login password
+	if err != nil {
+		log.Fatal("password not hashed")
+		return err
+	}
+	// retrieve logged in user object with username
+	user := &LoginData{}
+	_, err = r.DBConn.SQL("select * from login_data where username = ?", loginObj.Username).Get(user)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	// match the saved hash in login table to the login input password
+	if err = middleware.HashesMatch(user.Password, loginObj.Password); err != nil{
+		c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"incorrect password"})
+		log.Println(hash, "problem with hash match")
+		return nil
+	}
+
+	log.Println("Login successful")
+	c.Status(200).JSON(&fiber.Map{"message":"login successful"})
+	return nil
+}
+
+// func (r *Repository) insertLoginData(tableName string, user *StoreUsers) (int, error) {
+// 	err := r.DBConn.SQL("insert into" + tableName + user.Username + user.Phone + user.Email + user.Password)
+// 	if err != nil {
+// 		log.Fatal("unable to add user to login table")
+// 		return 0, nil
+// 	}
+// 	return 0, errors.New("")
+// }
 
 func (r *Repository) UpdateProduct(c *fiber.Ctx) error {
 	id := c.Params("id")
 	item:= database.Inventory{}
+	log.Printf("ID: %v", id)
 	has, err := r.DBConn.ID(id).Get(&item)
 	if err !=nil{
 		c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"item not in stock"})
@@ -186,37 +270,36 @@ func (r *Repository) UpdateProduct(c *fiber.Ctx) error {
 		c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"item not in stock"})
 		return err
 	}
-	c.Status(http.StatusOK).JSON(&fiber.Map{"message":"updated", "data":item})
+	c.Status(http.StatusOK).JSON(&fiber.Map{"message":"updated", "updated_product":item})
 	return nil
 }
 
 
+
 func (r *Repository) SetupRoutes(app *fiber.App) {
 	api := app.Group("api")
-	api.Post("/products", r.CreateOwnerProduct)
-	api.Get("/products", r.GetProducts)
 
-	api.Get("/product/:id", r.GetProduct)
+	// create user
+	api.Post("/product/users", r.CreateUser) // check
+	// Route to get all users
+	api.Get("/user/:user_id", r.GetUser) // check
+	// Route to create a product for a specific user
+	api.Post("/users/:userID/products", r.CreateOwnerProduct) // check
+	api.Post("/login", r.LoginHandler)
+
+	api.Get("/products", r.GetProducts) // check
+	api.Get("/product/:id", r.GetProduct) // check
 	api.Put("/product/update/:id", r.UpdateProduct)
+
 	// middleware to handle other functionalities on views beneath
 	// you can also use the middleware on an endpoint
-	app.Use("*/product", func(c *fiber.Ctx) error {
+	app.Use("/api/user/:user_id", func(c *fiber.Ctx) error {
 		log.Println("a middleware")
-		fmt.Println("some giberisssssssssh")
 		return c.Next()
 	})
 	app.Static("/static", "./public")
-
+	// delete a product
 	api.Delete("/product/delete/:id", r.DeleteProduct)
-
-	// create users
-	api.Post("/product/users", r.CreateUser)
-
-	// Route to get all users
-	api.Get("/users", r.GetUsers)
-
-	// Route to create a product for a specific users
-	api.Post("/users/:userID/products", r.CreateOwnerProduct)
 }
 
 func main(){

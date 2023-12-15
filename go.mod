@@ -5,6 +5,7 @@ go 1.21.3
 require (
 	github.com/gofiber/fiber/v2 v2.50.0
 	github.com/lib/pq v1.10.7
+	golang.org/x/crypto v0.7.0
 	xorm.io/xorm v1.3.4
 )
 
