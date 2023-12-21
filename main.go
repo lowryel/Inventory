@@ -1,16 +1,23 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	// "github.com/joho/godotenv"
+	"regexp"
+
 	"github.com/lowry/inventory-app/middleware"
 	"github.com/lowry/inventory-app/storage"
 
 	"xorm.io/xorm"
+
+	"context"
+    "go.uber.org/zap"
+    "github.com/uptrace/opentelemetry-go-extra/otelzap"
 )
 type StoreUsers struct{
 	First_name		string		`json:"first_name" validate:"required"`
@@ -37,17 +44,36 @@ type LoginData struct{
 	Password		string		`json:"password" validate:"required, min=8"`
 }
 
+type Address struct{
+	Line_1 				string		`json:"line_1"`
+	Line_2				string		`json:"line_2" validate:"required"`
+	City 				string		`json:"city" validate:"required"`
+	Town 				string		`json:"town" validate:"required"`
+	Phone 				[]string	`json:"phone" validate:"required"`
+	Popular_landmark 	string		`json:"popular_landmark" validate:"required, popular_landmark"`
+	House_no			string		`json:"house_no" validate:"required"`
+	UserID				uint		`json:"user_id"`
+}
+
 type Inventory struct{
-	Name 		string	`json:"name" validate:"required"`
-	Price 		float32	`json:"price" validate:"required"`
-	Instock 	bool	`json:"instock" validate:"required"`
-	Quantity 	int		`json:"quantity" validate:"required"`
-	UserID		uint 	`json:"user_id"`
+	Name 		string		`json:"name" validate:"required"`
+	Price 		float32		`json:"price" validate:"required"`
+	Instock 	bool		`json:"instock" validate:"required"`
+	Quantity 	int			`json:"quantity" validate:"required"`
+	UserID		uint 		`json:"user_id"`
 }
 
 type Repository struct{
 	DBConn *xorm.Engine
 }
+
+// OTEL LOGGER
+var (
+	zlog = otelzap.New(zap.NewExample())
+	ctx = context.Context(context.Background())
+)
+
+
 
 func (r *Repository) CreateUser(c *fiber.Ctx) error {
 	var newUser StoreUsers
@@ -60,23 +86,51 @@ func (r *Repository) CreateUser(c *fiber.Ctx) error {
 	users := &[]StoreUsers{}
 	err = r.DBConn.Find(users)
 	if err != nil {
-		log.Println(err)
+		zlog.Ctx(ctx).Error("user not found",
+		zap.Error(err))
 		return err
 	}
 	// run some input validation checks
-	for _, users := range *users{
-		if newUser.Email == users.Email{
-			c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"email already used"})
-			return err
-		}
-		if newUser.Phone == users.Phone{
-			c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"phone number already used"})
-			return err
-		}
-		if newUser.Username == users.Username{
-			c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"username already taken"})
-			return err
-		}
+	VerifyEmail(newUser.Email)
+	if err != nil{
+		c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"invalid email"})
+		zlog.Ctx(ctx).Error("invalid email",
+		zap.Error(err))
+		return err
+	}
+	// Create maps to index fields 
+	emailMap := make(map[string]bool)
+	phoneMap := make(map[string]bool)
+	usernameMap := make(map[string]bool)
+
+	// Populate maps from existing users
+	for _, users := range *users {
+		emailMap[users.Email] = true
+		phoneMap[users.Phone] = true 
+		usernameMap[users.Username] = true
+	}
+
+	// Validate new user fields against maps
+	if emailMap[newUser.Email] {
+		// email already exists
+		c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"email already exists"})
+		return nil
+	}
+
+	if phoneMap[newUser.Phone] {
+		// phone already exists 
+		c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"phone already exists"})
+		zlog.Ctx(ctx).Error("phone already exists",
+		zap.Error(err))
+		return nil
+	}
+
+	if usernameMap[newUser.Username] {
+		// username already exists
+		c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"username already exists"})
+		zlog.Ctx(ctx).Error("username already exists",
+		zap.Error(err))
+		return nil
 	}
 	hash_pass, err := middleware.Hash(newUser.Password)
 	if err != nil{
@@ -86,29 +140,44 @@ func (r *Repository) CreateUser(c *fiber.Ctx) error {
 	// insert users into DB users table
 	newUser.Created = time.Now().Local()
 	newUser.Password = hash_pass
-	_, err = r.DBConn.Insert(&newUser)
-	if err != nil{
-		c.Status(400).JSON(&fiber.Map{"message":"request failed"})
-		return err
+	tx := r.DBConn.NewSession()
+	defer tx.Close()
+	tx.Begin()
+	_, err = tx.Insert(&newUser)
+	// insert users into login table
+	// _, err = r.DBConn.Insert(&login_data)
+	if err != nil {
+		log.Fatal("unable to add user to login table")
+		tx.Rollback()
+		return nil
 	}
+	tx.Commit()
+
 	login_data := LoginData{}
 	login_data.Username=newUser.Username
 	login_data.Email = newUser.Email
 	login_data.Phone = newUser.Phone
 	login_data.Password = newUser.Password
 
+	tx = r.DBConn.NewSession()
+	defer tx.Close()
+	tx.Begin()
+	_, err = tx.Insert(&login_data)
 	// insert users into login table
-	_, err = r.DBConn.Insert(&login_data)
+	// _, err = r.DBConn.Insert(&login_data)
 	if err != nil {
 		log.Fatal("unable to add user to login table")
+		tx.Rollback()
 		return nil
 	}
+	tx.Commit()
 
 	log.Printf("users created: %s\n", newUser.Username)
-	c.Status(http.StatusOK).JSON(&fiber.Map{
+	c.Status(http.StatusCreated).JSON(&fiber.Map{
 		"message":"user created",
 		 "data":newUser,
 		})
+	zlog.Ctx(ctx).Info("user created")
 	return nil
 }
 
@@ -148,7 +217,7 @@ func (r *Repository) CreateOwnerProduct(c *fiber.Ctx) error {
 		return err
 	}
 	log.Printf("product created: %s\n", newProduct.Name)
-	c.Status(http.StatusOK).JSON(&fiber.Map{
+	c.Status(http.StatusCreated).JSON(&fiber.Map{
 		"message":"product has been added",
 		 "data":newProduct,
 		})
@@ -211,11 +280,7 @@ func (r *Repository) LoginHandler(c *fiber.Ctx) error {
 		log.Fatal("invalid data")
 		return nil
 	}
-	hash, err := middleware.Hash(loginObj.Password) // hash login password
-	if err != nil {
-		log.Fatal("password not hashed")
-		return err
-	}
+
 	// retrieve logged in user object with username
 	user := &LoginData{}
 	_, err = r.DBConn.SQL("select * from login_data where username = ?", loginObj.Username).Get(user)
@@ -225,13 +290,23 @@ func (r *Repository) LoginHandler(c *fiber.Ctx) error {
 	}
 	// match the saved hash in login table to the login input password
 	if err = middleware.HashesMatch(user.Password, loginObj.Password); err != nil{
-		c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"incorrect password"})
-		log.Println(hash, "problem with hash match")
+		c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"incorrect username or password"})
 		return nil
 	}
 
 	log.Println("Login successful")
 	c.Status(200).JSON(&fiber.Map{"message":"login successful"})
+	zlog.Ctx(ctx).Info("login successful")
+	return err
+}
+
+func VerifyEmail(email string)error{
+    if m, _ := regexp.MatchString(`^([\w\.\_]{2,10})@(\w{1,}).([a-z]{2,4})$`, email); !m {
+        log.Println("no")
+		return errors.New("invalid email")
+    }else{
+        log.Println("yes")
+    }
 	return nil
 }
 
@@ -246,9 +321,8 @@ func (r *Repository) LoginHandler(c *fiber.Ctx) error {
 
 func (r *Repository) UpdateProduct(c *fiber.Ctx) error {
 	id := c.Params("id")
-	item:= database.Inventory{}
-	log.Printf("ID: %v", id)
-	has, err := r.DBConn.ID(id).Get(&item)
+	item:= &database.Inventory{}
+	has, err := r.DBConn.ID(id).Get(item)
 	if err !=nil{
 		c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"item not in stock"})
 		return err
@@ -257,24 +331,101 @@ func (r *Repository) UpdateProduct(c *fiber.Ctx) error {
 		c.Status(http.StatusNotFound).JSON(&fiber.Map{"message":"item not found", "id":id})
 		return err
 	}
-	var updatedData database.Inventory
-	if err := c.BodyParser(&updatedData); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request payload"})
+	updatedData := &database.Inventory{}
+	if err := c.BodyParser(updatedData); err != nil {
+		c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request payload"})
+		return nil
 	}
 	item.Name = updatedData.Name
 	item.Price = updatedData.Price
 	item.Instock = updatedData.Instock
 	item.Quantity = updatedData.Quantity
-	_, err = r.DBConn.ID(id).Update(&item)
+	_, err = r.DBConn.ID(id).Update(item)
 	if err !=nil{
 		c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"item not in stock"})
 		return err
 	}
 	c.Status(http.StatusOK).JSON(&fiber.Map{"message":"updated", "updated_product":item})
-	return nil
+	zlog.Ctx(ctx).Info("product update successful")
+	return err
 }
 
+func (r *Repository) CreateOwnerAddress(c *fiber.Ctx) error {
+	log.Println("Creating Address...")
+	userID := c.Params("userID")
+	var newAddress Address
+	if err := c.BodyParser(&newAddress); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(&fiber.Map{"error": "Invalid request payload"})
+	}
+	// Set the UserID for the product
+	newAddress.UserID = middleware.ParseUserID(userID)
+	_, err := r.DBConn.Insert(&newAddress)
+	if err != nil {
+		c.Status(http.StatusBadRequest).JSON(
+			&fiber.Map{"message":"Could not create address"})
+			log.Printf("Error creating address: %v\n", err)
+		return nil
+	}
+	log.Printf("address created: %s\n", newAddress.Line_1)
+	c.Status(http.StatusCreated).JSON(&fiber.Map{
+		"message":"address has been added",
+		 "data":newAddress,
+		})
+	return err
+}
 
+func (r *Repository) GetAddress(c *fiber.Ctx) error{
+	user_id := c.Params("user_id")
+	item := &database.Address{}
+	// var name string
+	has, err := r.DBConn.SQL("select * from address where user_i_d= ?", user_id).Get(item)
+	if err !=nil{
+		c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"address not added"})
+
+		log.Fatal(err)
+	}
+	if !has {
+		c.Status(http.StatusNotFound).JSON(&fiber.Map{"message":"item not found"})
+		return nil
+	}
+	c.Status(http.StatusOK).JSON(&fiber.Map{"address":item})
+	return err
+}
+
+func (r *Repository) UpdateOrEditAddress(c *fiber.Ctx) error {
+	address_id := c.Params("address_id")
+	item:= database.Address{}
+	log.Printf("ID: %v", address_id)
+	has, err := r.DBConn.SQL("select * from address where i_d= ? limit 1", address_id).Get(&item)
+	if err !=nil{
+		c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"address not found"})
+		return nil
+	}
+	if !has {
+		c.Status(http.StatusNotFound).JSON(&fiber.Map{"message":"item not found", "id":address_id})
+		return err
+	}
+	var updatedData database.Address
+	if err := c.BodyParser(&updatedData); err != nil {
+		c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request payload"})
+		return nil
+	}
+	item.Line_1 = updatedData.Line_1
+	item.Line_2 = updatedData.Line_2
+	item.City = updatedData.City
+	item.Town = updatedData.Town
+	item.Phone = updatedData.Phone
+	item.Popular_landmark = updatedData.Popular_landmark
+	item.House_no = updatedData.House_no
+	_, err = r.DBConn.ID(address_id).Update(&item)
+	if err !=nil{
+		c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"item not in stock"})
+		return nil
+	}
+	c.Status(http.StatusOK).JSON(&fiber.Map{"message":"updated", "address updated":item})
+	zlog.Ctx(ctx).Info("address updated")
+	return err
+}
 
 func (r *Repository) SetupRoutes(app *fiber.App) {
 	api := app.Group("api")
@@ -293,16 +444,35 @@ func (r *Repository) SetupRoutes(app *fiber.App) {
 
 	// middleware to handle other functionalities on views beneath
 	// you can also use the middleware on an endpoint
-	app.Use("/api/user/:user_id", func(c *fiber.Ctx) error {
-		log.Println("a middleware")
-		return c.Next()
-	})
+	// app.Use("/api/user/:user_id", func(c *fiber.Ctx) error {
+	// 	log.Println("a middleware")
+	// 	return c.Next()
+	// })
 	app.Static("/static", "./public")
 	// delete a product
 	api.Delete("/product/delete/:id", r.DeleteProduct)
+	api.Post("/address/create/:userID", r.CreateOwnerAddress)
+	api.Get("/address/:user_id", r.GetAddress)
+	api.Put("/address/update/:address_id", r.UpdateOrEditAddress)
 }
 
+
+
 func main(){
+
+	// Wrap zap logger to extend Zap with API that accepts a context.Context.
+	// zlog := otelzap.New(zap.NewExample())
+	// ctx := context.Context(context.Background())
+	// And then pass ctx to propagate the span.
+	zlog.Ctx(ctx).Error("hello from zap",
+		zap.Error(errors.New("hello world")),
+		zap.String("foo", "bar"))
+
+	// Alternatively.
+	// zlog.ErrorContext(ctx, "hello from zap",
+	// 	zap.Error(errors.New("hello world")),
+	// 	zap.String("foo", "bar"))
+
 	app :=fiber.New(
 		fiber.Config{
 		    ServerHeader:  "Fiber",
@@ -311,7 +481,10 @@ func main(){
 	)
 	engine, err := database.NewConnection()
 	if err != nil{
-		log.Fatal("db connection failed", err)
+		log.Fatal("database connection unsuccessful", err)
+		zlog.Ctx(ctx).Error("database connection failed",
+		zap.Error(errors.New("database connection failed")),
+		zap.String("foo", "bar"))
 	}
 
 	r := Repository{

@@ -7,6 +7,11 @@ import (
 	// "gorm.io/driver/postgres"
 	"fmt"
 	"time"
+
+	"context"
+	// "errors"
+    "go.uber.org/zap"
+    "github.com/uptrace/opentelemetry-go-extra/otelzap"
 )
 
 type Inventory struct{
@@ -16,6 +21,18 @@ type Inventory struct{
 	Instock 	*bool			`json:"instock" validate:"required"`
 	Quantity 	*int			`json:"quantity" validate:"required"`
 	UserID		*StoreUsers		`json:"user_id"`
+}
+
+type Address struct{
+	ID 					int64		`json:"id"`
+	Line_1 				*string		`json:"line_1"`
+	Line_2				*string		`json:"line_2" validate:"required"`
+	City 				*string		`json:"city" validate:"required"`
+	Town 				*string		`json:"town" validate:"required"`
+	Phone 				*[]string		`json:"phone" validate:"required"`
+	Popular_landmark 	*string		`json:"popular_landmark" validate:"required, popular_landmark"`
+	House_no			*string		`json:"house_no" validate:"required"`
+	UserID				*StoreUsers		`xorm:"unique" json:"user_id"`
 }
 
 type StoreUsers struct{
@@ -31,10 +48,6 @@ type StoreUsers struct{
 	Refresh_token	*string		`json:"refresh_token"`
 }
 
-type Login struct {
-	Username string	`json:"username"`
-	Password string	`json:"password"`
-}
 
 type LoginData struct{
 	ID 				int64		`json:"id" validate:"autoIncrement"`
@@ -52,11 +65,18 @@ func NewConnection() (*xorm.Engine, error){
 	if err != nil{
 		return nil, err
 	}
-	fmt.Println("Hello database launching...")
+
+	// Wrap zap logger to extend Zap with API that accepts a context.Context.
+	zlog := otelzap.New(zap.NewExample())
+	ctx := context.Context(context.Background())
+	fmt.Println("")
+	zlog.Ctx(ctx).Info("Hello database launching...",)
 	if err := engine.Ping(); err != nil{
 		return nil, err
 	}
-	if err := engine.Sync(new(Inventory), new(StoreUsers), new(LoginData)); err != nil{
+	if err := engine.Sync(
+			new(Inventory), new(StoreUsers), new(LoginData), new(Address),
+		); err != nil{
 		return nil, err
 	}
 	return engine, err
