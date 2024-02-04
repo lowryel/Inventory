@@ -65,21 +65,21 @@ func JWTMiddleware() fiber.Handler {
   tokenCache := cache.New(5*time.Minute, 10*time.Minute)
   return func(c *fiber.Ctx) error {
     tokenString := c.Get("Authorization")
-    fmt.Println(tokenString)
+    fmt.Println(tokenString[7:])
     // Check cache
-    if token, ok := tokenCache.Get(tokenString); ok {
+    if token, ok := tokenCache.Get(tokenString[7:]); ok {
       c.Locals("user", token)
       return c.Next()
     }
     
-    token, err := parseAndValidateToken(tokenString)
+    token, err := parseAndValidateToken(tokenString[7:])
     if err != nil {
       log.Printf("Token invalid error: %s\n", err)
       return c.Status(http.StatusBadRequest).JSON(&fiber.Map{
         "message": "Invalid token"})
     }
     // Cache valid token
-    tokenCache.Set(string(tokenString), token, -1)
+    tokenCache.Set(string(tokenString[7:]), token, -1)
     // Extract and store user identity
     user := token.Claims.(jwt.MapClaims) 
     c.Locals("user", user)
