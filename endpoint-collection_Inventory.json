@@ -1,0 +1,214 @@
+{
+    "client": "Thunder Client",
+    "collectionName": "Inventory",
+    "dateExported": "2024-02-03T12:25:25.655Z",
+    "version": "1.1",
+    "folders": [],
+    "requests": [
+        {
+            "_id": "7e736595-7291-45a4-9bbe-13aa68abdf84",
+            "colId": "15072606-47b4-44c5-8ff0-1674ec72f83b",
+            "containerId": "",
+            "name": "Login",
+            "url": "http://localhost:5000/api/login",
+            "method": "POST",
+            "sortNum": 10000,
+            "created": "2024-02-03T10:04:49.739Z",
+            "modified": "2024-02-03T10:20:01.123Z",
+            "headers": [
+                {
+                    "name": "Content-Type",
+                    "value": "application/json"
+                }
+            ],
+            "params": [],
+            "body": {
+                "type": "json",
+                "raw": "{\n  \"username\":\"lastomsons\",\n  \"password\":\"cartelo009\"\n}",
+                "form": []
+            },
+            "tests": [],
+            "docs": "{ \"username\":\"Eugene\", \"password\":\"cartelo009\" }"
+        },
+        {
+            "_id": "8e0110eb-bb2a-4f2d-85f3-e093db8533a2",
+            "colId": "15072606-47b4-44c5-8ff0-1674ec72f83b",
+            "containerId": "",
+            "name": "Get All Products",
+            "url": "http://0.0.0.0:5000/api/products",
+            "method": "GET",
+            "sortNum": 20000,
+            "created": "2024-02-03T10:09:42.213Z",
+            "modified": "2024-02-03T10:09:49.461Z",
+            "headers": [],
+            "params": [],
+            "tests": []
+        },
+        {
+            "_id": "7d806727-590c-4a7f-9871-5cbcf3518ea5",
+            "colId": "15072606-47b4-44c5-8ff0-1674ec72f83b",
+            "containerId": "",
+            "name": "Get One Product",
+            "url": "http://0.0.0.0:5000/api/product/4",
+            "method": "GET",
+            "sortNum": 30000,
+            "created": "2024-02-03T10:11:45.703Z",
+            "modified": "2024-02-03T10:11:55.266Z",
+            "headers": [],
+            "params": [],
+            "tests": []
+        },
+        {
+            "_id": "3c245b4c-8d1b-417e-b89b-c8d616a8afb1",
+            "colId": "15072606-47b4-44c5-8ff0-1674ec72f83b",
+            "containerId": "",
+            "name": "Create User",
+            "url": "http://localhost:5000/api/product/users",
+            "method": "POST",
+            "sortNum": 40000,
+            "created": "2024-02-03T10:20:50.806Z",
+            "modified": "2024-02-03T10:21:46.639Z",
+            "headers": [
+                {
+                    "name": "Content-Type",
+                    "value": "application/json"
+                }
+            ],
+            "params": [],
+            "body": {
+                "type": "json",
+                "raw": "{\n  \"first_name\": \"Lavar\",\n  \"username\":\"lastomsons\",\n  \"phone\":\"0508581779\",\n  \"email\":\"eugene@gjmai.com\",\n  \"password\":\"cartelo009\",\n  \"user_type\": \"ADMIN\"\n}",
+                "form": []
+            },
+            "tests": []
+        },
+        {
+            "_id": "4753bdb1-9f42-41e7-af6a-1de3d2376592",
+            "colId": "15072606-47b4-44c5-8ff0-1674ec72f83b",
+            "containerId": "",
+            "name": "Get a User",
+            "url": "http://localhost:5000/api/user/9",
+            "method": "GET",
+            "sortNum": 50000,
+            "created": "2024-02-03T10:24:23.040Z",
+            "modified": "2024-02-03T10:24:28.887Z",
+            "headers": [],
+            "params": [],
+            "tests": []
+        },
+        {
+            "_id": "2ba16336-6cdd-4f2d-b6ea-0221ed930486",
+            "colId": "15072606-47b4-44c5-8ff0-1674ec72f83b",
+            "containerId": "",
+            "name": "Create Product by User",
+            "url": "http://localhost:5000/api/users/9/products",
+            "method": "POST",
+            "sortNum": 60000,
+            "created": "2024-02-03T10:26:12.682Z",
+            "modified": "2024-02-03T10:31:52.963Z",
+            "headers": [
+                {
+                    "name": "Content-Type",
+                    "value": "application/json"
+                }
+            ],
+            "params": [],
+            "body": {
+                "type": "json",
+                "raw": "{\n  \"name\":\"Dominos Pizza\",\n  \"price\": 25,\n  \"instock\": true,\n  \"quantity\":2\n}",
+                "form": []
+            },
+            "tests": []
+        },
+        {
+            "_id": "dd0b2623-2065-40de-847a-d47344a9b94e",
+            "colId": "15072606-47b4-44c5-8ff0-1674ec72f83b",
+            "containerId": "",
+            "name": "Update Product",
+            "url": "http://0.0.0.0:5000/api/product/update/4",
+            "method": "PUT",
+            "sortNum": 70000,
+            "created": "2024-02-03T10:42:25.856Z",
+            "modified": "2024-02-03T10:43:00.598Z",
+            "headers": [],
+            "params": [],
+            "body": {
+                "type": "json",
+                "raw": "{\n  \"name\":\"Melons\",\n  \"price\":15,\n  \"instock\":true,\n  \"quantity\":13\n}",
+                "form": []
+            },
+            "tests": []
+        },
+        {
+            "_id": "f0585760-d2d3-4b55-a9f2-1ae29047a3bb",
+            "colId": "15072606-47b4-44c5-8ff0-1674ec72f83b",
+            "containerId": "",
+            "name": "Delete Product",
+            "url": "http://localhost:5000/api/product/delete/3",
+            "method": "DELETE",
+            "sortNum": 80000,
+            "created": "2024-02-03T10:45:42.741Z",
+            "modified": "2024-02-03T10:45:56.996Z",
+            "headers": [],
+            "params": [],
+            "tests": []
+        },
+        {
+            "_id": "ccf0c87c-6255-4851-a791-c88904b5c11d",
+            "colId": "15072606-47b4-44c5-8ff0-1674ec72f83b",
+            "containerId": "",
+            "name": "Create User's Address",
+            "url": "http://0.0.0.0:5000/api/address/create/5",
+            "method": "POST",
+            "sortNum": 90000,
+            "created": "2024-02-03T10:52:42.481Z",
+            "modified": "2024-02-03T10:56:31.874Z",
+            "headers": [
+                {
+                    "name": "Content-Type",
+                    "value": "application/json"
+                }
+            ],
+            "params": [],
+            "body": {
+                "type": "json",
+                "raw": "{\n  \"line_1\":\"Modish Plus\",\n  \"line_2\": \"Hse No. 12\",\n  \"city\": \"East Legon\",\n  \"town\": \"Mempeasem\",\n  \"popular_landmark\": \"Assemblies of God\",\n  \"house_no\": \"Hse No. 12, Sai Cl\"\n}",
+                "form": []
+            },
+            "tests": []
+        },
+        {
+            "_id": "e8cd70eb-07d6-4367-a58e-f66e8d827e66",
+            "colId": "15072606-47b4-44c5-8ff0-1674ec72f83b",
+            "containerId": "",
+            "name": "Update address",
+            "url": "http://localhost:5000/api/address/update/16",
+            "method": "PUT",
+            "sortNum": 100000,
+            "created": "2024-02-03T10:57:25.256Z",
+            "modified": "2024-02-03T11:50:34.605Z",
+            "headers": [],
+            "params": [],
+            "body": {
+                "type": "json",
+                "raw": "{\n  \"phone\":[\"0244598745\", \"0548745889\", \"0544950009\"]\n}",
+                "form": []
+            },
+            "tests": []
+        },
+        {
+            "_id": "650bd73d-61da-4c94-ab75-411fd9519ac5",
+            "colId": "15072606-47b4-44c5-8ff0-1674ec72f83b",
+            "containerId": "",
+            "name": "Get Address",
+            "url": "http://0.0.0.0:5000/api/address/5",
+            "method": "GET",
+            "sortNum": 110000,
+            "created": "2024-02-03T12:22:31.710Z",
+            "modified": "2024-02-03T12:24:57.878Z",
+            "headers": [],
+            "params": [],
+            "tests": []
+        }
+    ]
+}

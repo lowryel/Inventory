@@ -14,11 +14,35 @@ import (
 	"github.com/lowry/inventory-app/storage"
 
 	"xorm.io/xorm"
+	// "github.com/golang-jwt/jwt"
 
 	"context"
     "go.uber.org/zap"
     "github.com/uptrace/opentelemetry-go-extra/otelzap"
+	"github.com/ansrivas/fiberprometheus/v2"
+	"github.com/prometheus/client_golang/prometheus"
+	_ "github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+
+var (
+	// custom metrics
+	customMetric = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "custom_metric_total",
+			Help: "Total count of custom metric events",
+		},
+		[]string{"status"},
+	)
+)
+
+func init(){
+	// register custom metric
+	prometheus.MustRegister(customMetric)
+}
+
+
+
 type StoreUsers struct{
 	First_name		string		`json:"first_name" validate:"required"`
 	Username 		string		`json:"username" validate:"required, min=3, max=50"`
@@ -104,10 +128,10 @@ func (r *Repository) CreateUser(c *fiber.Ctx) error {
 	usernameMap := make(map[string]bool)
 
 	// Populate maps from existing users
-	for _, users := range *users {
-		emailMap[users.Email] = true
-		phoneMap[users.Phone] = true 
-		usernameMap[users.Username] = true
+	for _, user := range *users {
+		emailMap[user.Email] = true
+		phoneMap[user.Phone] = true 
+		usernameMap[user.Username] = true
 	}
 
 	// Validate new user fields against maps
@@ -226,13 +250,14 @@ func (r *Repository) CreateOwnerProduct(c *fiber.Ctx) error {
 
 
 func (r *Repository) GetProducts(c *fiber.Ctx) error {
-	log.Println("Getting all products...")
+	log.Println("Getting all products...") 
 	items := &[]database.Inventory{}
 	err := r.DBConn.Find(items)
 	if err != nil{
 		c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"Bad Request"})
 		return err
 	}
+	// user := c.Locals("claims").(*middleware.JWTClaims)
 	c.Status(http.StatusOK).JSON(&fiber.Map{"data": items})
 	return nil
 }
@@ -293,13 +318,27 @@ func (r *Repository) LoginHandler(c *fiber.Ctx) error {
 		c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"incorrect username or password"})
 		return nil
 	}
+	// signed_user := StoreUsers{}
+	token, err := middleware.GenerateToken(user.Username, user.Email)
+	if err != nil {
+		return c.Status(http.StatusBadRequest).JSON(&fiber.Map{"msg":"error in generating token"})
+	}
 
+	rows, err := middleware.InserToken(r.DBConn, "shops.store_users", token, user.Username)
+	if err != nil{
+		return nil
+	}
 	log.Println("Login successful")
-	c.Status(200).JSON(&fiber.Map{"message":"login successful"})
+	c.Status(http.StatusCreated).JSON(&fiber.Map{"token": token, "rows":rows})
 	zlog.Ctx(ctx).Info("login successful")
+    // c.Cookie(&fiber.Cookie{
+    //     Name:    "token",
+    //     Value:   token,
+    //     Expires: time.Now().Add(time.Hour * 24),
+    // })
 	return err
 }
-
+ 
 func VerifyEmail(email string)error{
     if m, _ := regexp.MatchString(`^([\w\.\_]{2,10})@(\w{1,}).([a-z]{2,4})$`, email); !m {
         log.Println("no")
@@ -368,21 +407,21 @@ func (r *Repository) CreateOwnerAddress(c *fiber.Ctx) error {
 	}
 	log.Printf("address created: %s\n", newAddress.Line_1)
 	c.Status(http.StatusCreated).JSON(&fiber.Map{
-		"message":"address has been added",
-		 "data":newAddress,
+			"message":"address has been added",
+			"data":newAddress,
 		})
 	return err
 }
 
 func (r *Repository) GetAddress(c *fiber.Ctx) error{
 	user_id := c.Params("user_id")
-	item := &database.Address{}
+	item := &Address{}
 	// var name string
 	has, err := r.DBConn.SQL("select * from address where user_i_d= ?", user_id).Get(item)
 	if err !=nil{
 		c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"address not added"})
 
-		log.Fatal(err)
+		log.Printf("ID unavailable %s", err)
 	}
 	if !has {
 		c.Status(http.StatusNotFound).JSON(&fiber.Map{"message":"item not found"})
@@ -393,20 +432,17 @@ func (r *Repository) GetAddress(c *fiber.Ctx) error{
 }
 
 func (r *Repository) UpdateOrEditAddress(c *fiber.Ctx) error {
-	address_id := c.Params("address_id")
+	address_id := c.Params("user_id")
 	item:= database.Address{}
-	log.Printf("ID: %v", address_id)
-	has, err := r.DBConn.SQL("select * from address where i_d= ? limit 1", address_id).Get(&item)
+
+	_, err := r.DBConn.SQL("select * from address where user_i_d= ? limit 1", address_id).Get(&item)
 	if err !=nil{
 		c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"address not found"})
 		return nil
 	}
-	if !has {
-		c.Status(http.StatusNotFound).JSON(&fiber.Map{"message":"item not found", "id":address_id})
-		return err
-	}
+
 	var updatedData database.Address
-	if err := c.BodyParser(&updatedData); err != nil {
+	if err = c.BodyParser(&updatedData); err != nil {
 		c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request payload"})
 		return nil
 	}
@@ -422,13 +458,17 @@ func (r *Repository) UpdateOrEditAddress(c *fiber.Ctx) error {
 		c.Status(http.StatusBadRequest).JSON(&fiber.Map{"message":"item not in stock"})
 		return nil
 	}
-	c.Status(http.StatusOK).JSON(&fiber.Map{"message":"updated", "address updated":item})
+	c.Status(http.StatusOK).JSON(&fiber.Map{"message":"update successful"})
 	zlog.Ctx(ctx).Info("address updated")
 	return err
 }
 
 func (r *Repository) SetupRoutes(app *fiber.App) {
 	api := app.Group("api")
+	prometheus := fiberprometheus.New("my-awesome-api")
+	prometheus.RegisterAt(app, "/metrics")
+	// Register the Prometheus endpoint for monitoring
+	app.Use("/metrics", prometheus.Middleware)
 
 	// create user
 	api.Post("/product/users", r.CreateUser) // check
@@ -438,40 +478,33 @@ func (r *Repository) SetupRoutes(app *fiber.App) {
 	api.Post("/users/:userID/products", r.CreateOwnerProduct) // check
 	api.Post("/login", r.LoginHandler)
 
+
+    // Middleware to check JWT token for protected routes
+	
+    // Protected route
 	api.Get("/products", r.GetProducts) // check
 	api.Get("/product/:id", r.GetProduct) // check
 	api.Put("/product/update/:id", r.UpdateProduct)
 
-	// middleware to handle other functionalities on views beneath
-	// you can also use the middleware on an endpoint
-	// app.Use("/api/user/:user_id", func(c *fiber.Ctx) error {
-	// 	log.Println("a middleware")
-	// 	return c.Next()
-	// })
 	app.Static("/static", "./public")
 	// delete a product
 	api.Delete("/product/delete/:id", r.DeleteProduct)
 	api.Post("/address/create/:userID", r.CreateOwnerAddress)
+	app.Use(middleware.JWTMiddleware())
 	api.Get("/address/:user_id", r.GetAddress)
-	api.Put("/address/update/:address_id", r.UpdateOrEditAddress)
+	api.Put("/address/update/:user_id", r.UpdateOrEditAddress)
+	// jwt middleware to restrict access to unauthorised users
+	// ProtectedRoute is a protected route that requires a valid JWT token
+	api.Get("protected/", middleware.ProtectedRoute)
 }
 
 
 
 func main(){
-
-	// Wrap zap logger to extend Zap with API that accepts a context.Context.
-	// zlog := otelzap.New(zap.NewExample())
-	// ctx := context.Context(context.Background())
 	// And then pass ctx to propagate the span.
 	zlog.Ctx(ctx).Error("hello from zap",
 		zap.Error(errors.New("hello world")),
 		zap.String("foo", "bar"))
-
-	// Alternatively.
-	// zlog.ErrorContext(ctx, "hello from zap",
-	// 	zap.Error(errors.New("hello world")),
-	// 	zap.String("foo", "bar"))
 
 	app :=fiber.New(
 		fiber.Config{
@@ -479,14 +512,18 @@ func main(){
     		AppName: "Mini Inventory v1.0.1",
 		},
 	)
+	// prometheus := fiberprometheus.New("my-awesome-api")
+	// prometheus.RegisterAt(app, "/metrics")
+	// // Register the Prometheus endpoint for monitoring
+	// app.Use("/metrics", prometheus.Middleware)
+
 	engine, err := database.NewConnection()
 	if err != nil{
 		log.Fatal("database connection unsuccessful", err)
 		zlog.Ctx(ctx).Error("database connection failed",
 		zap.Error(errors.New("database connection failed")),
-		zap.String("foo", "bar"))
+		)
 	}
-
 	r := Repository{
 		DBConn: engine,
 	}

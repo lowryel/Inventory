@@ -65,8 +65,6 @@ func NewConnection() (*xorm.Engine, error){
 	if err != nil{
 		return nil, err
 	}
-
-	// Wrap zap logger to extend Zap with API that accepts a context.Context.
 	zlog := otelzap.New(zap.NewExample())
 	ctx := context.Context(context.Background())
 	fmt.Println("")
