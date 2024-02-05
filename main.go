@@ -482,6 +482,7 @@ func (r *Repository) SetupRoutes(app *fiber.App) {
     // Middleware to check JWT token for protected routes
 	
     // Protected route
+	app.Use(middleware.JWTMiddleware())
 	api.Get("/products", r.GetProducts) // check
 	api.Get("/product/:id", r.GetProduct) // check
 	api.Put("/product/update/:id", r.UpdateProduct)
@@ -490,7 +491,6 @@ func (r *Repository) SetupRoutes(app *fiber.App) {
 	// delete a product
 	api.Delete("/product/delete/:id", r.DeleteProduct)
 	api.Post("/address/create/:userID", r.CreateOwnerAddress)
-	app.Use(middleware.JWTMiddleware())
 	api.Get("/address/:user_id", r.GetAddress)
 	api.Put("/address/update/:user_id", r.UpdateOrEditAddress)
 	// jwt middleware to restrict access to unauthorised users
