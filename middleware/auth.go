@@ -65,21 +65,25 @@ func JWTMiddleware() fiber.Handler {
   tokenCache := cache.New(5*time.Minute, 10*time.Minute)
   return func(c *fiber.Ctx) error {
     tokenString := c.Get("Authorization")
-    fmt.Println(tokenString[7:])
+    if tokenString==""{
+      log.Println("token required")
+      return c.Status(http.StatusUnauthorized).JSON(&fiber.Map{"message":"Unauthorized"})
+    }
+    tokenString=tokenString[7:]
     // Check cache
-    if token, ok := tokenCache.Get(tokenString[7:]); ok {
+    if token, ok := tokenCache.Get(tokenString); ok {
       c.Locals("user", token)
       return c.Next()
     }
     
-    token, err := parseAndValidateToken(tokenString[7:])
+    token, err := parseAndValidateToken(tokenString)
     if err != nil {
       log.Printf("Token invalid error: %s\n", err)
       return c.Status(http.StatusBadRequest).JSON(&fiber.Map{
         "message": "Invalid token"})
     }
     // Cache valid token
-    tokenCache.Set(string(tokenString[7:]), token, -1)
+    tokenCache.Set(string(tokenString), token, 0)
     // Extract and store user identity
     user := token.Claims.(jwt.MapClaims) 
     c.Locals("user", user)
@@ -93,7 +97,6 @@ func parseAndValidateToken(tokenString string) (*jwt.Token, error) {
     if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
         return nil, fmt.Errorf("unexpected signing method: %v", token.Header["Token"])
     }
-    log.Println(token.Header["Token"])
     return []byte(SecretKey), nil
   })
   if err != nil {
@@ -114,7 +117,7 @@ var (
 // ProtectedRoute is a protected route that requires a valid JWT token
 func ProtectedRoute(c *fiber.Ctx) error {
     // user := c.Locals("root").(*jwt.MapClaims)
-    return c.JSON(fiber.Map{"message": "Hello"})
+    return c.JSON(fiber.Map{"message": "Hello, welcome to a protected route!"})
 }
 
 
